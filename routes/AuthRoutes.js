@@ -5,6 +5,8 @@ const multer = require('multer')
 const fs = require('fs')
 const path = require('path')
 const User = require("../models/UserModel")
+const bcrypt = require("bcryptjs")
+const jwt = require('jsonwebtoken');
 
 
  
@@ -55,6 +57,9 @@ const handleErrors = (err) =>{
         if(err.errors.phone){
             errors.phone=err.errors.phone.message
         }
+        if(err.errors.password){
+            errors.password=err.errors.password.message
+        }
 
 
 
@@ -68,23 +73,36 @@ const handleErrors = (err) =>{
 
 }
 
-//
 
 
+const maxAge = 3 * 24 * 60 * 60;
+const createToken = (id) => {
+  return jwt.sign({ id }, 'test secret', { // You can add your own secret phrase
+    expiresIn: maxAge
+  });
+};
 
 
 
 router.post('/signup', upload.any(), async (req,res)=>{
     console.log(req)
+    const salt = await bcrypt.genSalt();
+    let password = await bcrypt.hash(req.body.password, salt);
     let obj ={
         name: req.body.name,
         email: req.body.email,
         gender: req.body.gender,
         phone: req.body.phone,
+        password: password,
         img:{
             data:"",
             contentType: 'image/png'
-        }
+        },
+        balance:{
+            value:0,
+            currency:'USD'
+        },
+        logs:[],
     }
     console.log(obj)
     req.files.map(file=>{
@@ -94,8 +112,9 @@ router.post('/signup', upload.any(), async (req,res)=>{
     })
     try{
         const user = await User.create(obj);
-        res.status(201).json({user});
-        res.send("client created")
+        const token = createToken(user._id);
+        res.cookie('jwt', token, { httpOnly: true, maxAge: maxAge * 1000 });
+        res.status(201).json({ user: user._id });
     }
     catch(err){
         errors = handleErrors(err);
@@ -107,6 +126,21 @@ router.post('/signup', upload.any(), async (req,res)=>{
 
 
 router.get('/users',  authController.users_get);
+
+router.post('/login',upload.none(), async (req, res) => {
+    const { email, password } = req.body;
+  
+    try {
+      const user = await User.login(email, password);
+      const token = createToken(user._id);
+      res.cookie('jwt', token, { httpOnly: true, maxAge: maxAge * 1000 });
+      res.status(200).json({ user: user._id });
+    } 
+    catch (err) {
+      res.status(400).json(err);
+    }
+  
+  }) 
 
 
 
